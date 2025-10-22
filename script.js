@@ -1,60 +1,128 @@
+// Replace entire script.js with this content
+
+// Configuration: set warranty percentage here
 const warrantyPercent = 40;
-const prices = {"fogging-machine": 18000, "brush-cutter": 9500, "garden-tools": 1200, "heavy-chainsaw": 15000, "hedge-trimmer": 4200, "lawn-mower": 25000, "sprayer": 3200, "tiller": 22000};
 
-document.getElementById('year')?.textContent = new Date().getFullYear();const form = document.getElementById('contactForm');if(form){form.addEventListener('submit', function(e){const btn = form.querySelector('button[type="submit"]');if(btn){btn.disabled = true;btn.textContent = 'Sending...';}setTimeout(()=>{ if(btn){ btn.disabled=false; btn.textContent='Send' } }, 3000);});}
+// Prices mapping - adjust if you want different base prices.
+// If you already have price elements in the HTML, script will respect them (this mapping is a fallback).
+const prices = {
+  "fogging-machine": 18000,
+  "brush-cutter": 9500,
+  "garden-tools": 1200,
+  "heavy-chainsaw": 15000,
+  "hedge-trimmer": 4200,
+  "lawn-mower": 25000,
+  "sprayer": 3200,
+  "tiller": 22000
+};
 
-// Warranty buttons behavior: explicit With / Without buttons (40% warranty)
-(function(){
-  function formatINR(n){ return '₹' + Number(n).toLocaleString('en-IN'); }
+(function () {
+  'use strict';
 
-  function setPrice(pid, withWarranty){
-    const base = prices[pid];
+  function formatINR(n) {
+    return '₹' + Number(n).toLocaleString('en-IN');
+  }
+
+  // Read base price from DOM if present, else use prices map
+  function basePriceFor(pid) {
+    const el = document.getElementById('price-' + pid);
+    if (el) {
+      // Attempt to parse existing displayed price (strip non-digits)
+      const text = el.textContent || '';
+      const digits = text.replace(/[^\d]/g, '');
+      if (digits) return parseInt(digits, 10);
+    }
+    return prices[pid] || 0;
+  }
+
+  function setPrice(pid, useWarranty) {
+    const base = basePriceFor(pid);
     const add = Math.round(base * warrantyPercent / 100);
-    const priceSpan = document.getElementById('price-' + pid);
-    const wCost = document.getElementById('warranty-cost-' + pid);
-    const art = document.getElementById(pid);
-    if (!priceSpan || !art) return;
-    if (withWarranty){ 
-      priceSpan.textContent = formatINR(base + add);
-      if (wCost) wCost.textContent = ' (includes +' + formatINR(add) + ')';
-      art.dataset.finalPrice = base + add;
-      art.dataset.warranty = 'with';
-    } else { 
-      priceSpan.textContent = formatINR(base);
-      if (wCost) wCost.textContent = '';
-      art.dataset.finalPrice = base;
-      art.dataset.warranty = 'without';
+    const priceEl = document.getElementById('price-' + pid);
+    const wCostEl = document.getElementById('warranty-cost-' + pid);
+    const article = document.getElementById(pid);
+    if (!priceEl || !article) return;
+    if (useWarranty) {
+      priceEl.textContent = formatINR(base + add);
+      if (wCostEl) wCostEl.textContent = ' (includes +' + formatINR(add) + ')';
+      article.dataset.warranty = 'with';
+      article.dataset.finalPrice = base + add;
+    } else {
+      priceEl.textContent = formatINR(base);
+      if (wCostEl) wCostEl.textContent = '';
+      article.dataset.warranty = 'without';
+      article.dataset.finalPrice = base;
     }
   }
 
-  document.addEventListener('DOMContentLoaded', function(){
-    // initialize prices
-    Object.keys(prices).forEach(pid => setPrice(pid, false));
-
-    // wire buttons
-    document.querySelectorAll('.btn-warranty').forEach(btn => {
-      btn.addEventListener('click', function(e){
-        const pid = btn.dataset.pid;
-        if (!pid) return;
-        if (btn.classList.contains('btn-with')) setPrice(pid, true);
-        else setPrice(pid, false);
-      });
+  function initAllProducts() {
+    // Find all product articles and ensure they have dataset entries set
+    document.querySelectorAll('article.card.product').forEach(art => {
+      const pid = art.id;
+      if (!pid) return;
+      // initialize dataset if missing
+      if (!art.dataset.warranty) art.dataset.warranty = 'without';
+      // initialize price (reads DOM or fallback)
+      setPrice(pid, art.dataset.warranty === 'with');
     });
+  }
 
-    // Request Quote links include current selection
-    document.querySelectorAll('a.btn').forEach(a => {
-      a.addEventListener('click', function(ev){
-        const art = a.closest('article.product');
-        if (!art) return;
+  // Use event delegation for button clicks
+  function listenForWarrantyButtons() {
+    document.addEventListener('click', function (e) {
+      const target = e.target;
+      if (!target) return;
+
+      // With warranty button: has class 'btn-with'
+      if (target.classList && target.classList.contains('btn-with')) {
+        const pid = target.dataset && target.dataset.pid;
+        if (pid) setPrice(pid, true);
+        return;
+      }
+
+      // Without warranty button: has class 'btn-without'
+      if (target.classList && target.classList.contains('btn-without')) {
+        const pid = target.dataset && target.dataset.pid;
+        if (pid) setPrice(pid, false);
+        return;
+      }
+
+      // If you used a toggle or other element, add more handlers here
+    });
+  }
+
+  // Make Request Quote include current product/warranty/price
+  function wireRequestQuoteLinks() {
+    document.addEventListener('click', function (e) {
+      const t = e.target;
+      if (!t) return;
+      if (t.tagName === 'A' && t.classList.contains('btn')) {
+        // run this just-in-time before navigation
+        const art = t.closest && t.closest('article.card.product');
+        if (!art) return true; // not a product request link
         const pid = art.id;
         const warranty = art.dataset.warranty || 'without';
-        const price = art.dataset.finalPrice || prices[pid];
+        const price = art.dataset.finalPrice || basePriceFor(pid);
         const params = new URLSearchParams();
         params.set('product', pid);
         params.set('warranty', warranty);
         params.set('price', price);
-        a.href = 'contact.html?' + params.toString();
-      });
+        t.href = 'contact.html?' + params.toString();
+        // allow link to proceed
+      }
+    }, true);
+  }
+
+  // DOM ready
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', function () {
+      initAllProducts();
+      listenForWarrantyButtons();
+      wireRequestQuoteLinks();
     });
-  });
+  } else {
+    initAllProducts();
+    listenForWarrantyButtons();
+    wireRequestQuoteLinks();
+  }
 })();
